@@ -1,0 +1,6 @@
+/Debug/*.o
+/Debug/json-rsf-cpp
+/Release/*.o
+/Release/json-rsf-cpp
+
+/Release/
