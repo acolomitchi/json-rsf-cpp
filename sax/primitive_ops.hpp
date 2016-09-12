@@ -10,13 +10,13 @@
 
 #include <stdexcept>
 #include <vector>
+#include <sstream>
 
 #include "../common/utf8.hpp"
-#include "../common/json_types.hpp"
 #include "../common/exceptions.hpp"
+#include "json_types.hpp"
 
 namespace jsonrsf {
-namespace sax {
 
 //
 // Null handlers
@@ -187,21 +187,33 @@ struct value_storer<boost::optional<T>> {
   }
 };
 
+template <typename T, typename ST>
+struct str_storer_base {
+  using guard=typename std::enable_if<
+       std::is_same<T, std::string>::value
+    && (
+         std::is_same<ST, std::string>::value
+      || std::is_same<ST, boost::optional<std::string>>::value
+    )
+  >::type;
 
-template <>
-struct value_storer<std::string> {
-  using value_type=std::string;
-  using storage_type=std::string;
-
-  void operator()(storage_type& target, const value_type& value) {
+  void operator()(ST& target, const T& value) {
     target=value;
   }
-  void operator()(storage_type& target, value_type&& value) {
+  void operator()(ST& target, T&& value) {
     target=value;
   }
   // disable the rest of them
-  template <typename U> void operator()(storage_type& target, const U& value) {
+  template <typename U> void operator()(ST& target, const U& value) {
   }
+};
+
+template <>
+struct value_storer<std::string> :
+public str_storer_base<std::string, std::string> {
+  using value_type=std::string;
+  using storage_type=std::string;
+
   static bool init_storage(storage_type& target) {
     // do-nothing method - the assigment will be enough
     return true; // inited enough, so return true
@@ -209,19 +221,10 @@ struct value_storer<std::string> {
 };
 
 template <>
-struct value_storer<boost::optional<std::string>> {
+struct value_storer<boost::optional<std::string>> :
+public str_storer_base<std::string, boost::optional<std::string>>{
   using value_type=std::string;
   using storage_type=boost::optional<std::string>;
-
-  void operator()(storage_type& target, const value_type& value) {
-    target=value;
-  }
-  void operator()(storage_type& target, value_type&& value) {
-    target=value;
-  }
-  // disable the rest of them
-  template <typename U> void operator()(storage_type& target, const U& value) {
-  }
   static bool init_storage(storage_type& target) {
     // do-nothing method - the assigment will be enough
     return true; // inited enough, so return true
@@ -241,7 +244,7 @@ template <typename ch32DestT> bool cnvSingleChar32(
       // for a single character, we must consume the input exactly
       std::string msg("Failed to convert to a single char value (provided <");
       msg.append(utf8Src, utf8Src+length).append(">)");
-      throw std::domain_error(msg.c_str());
+      throw invalid_input(msg.c_str());
     }
   }
   else {
@@ -253,26 +256,32 @@ template <typename ch32DestT> bool cnvSingleChar32(
   return toRet;
 }
 
+template <typename T, typename ST>
+struct char32_storage_base {
+  using guard=typename std::enable_if<
+       std::is_same<std::string, typename std::remove_cv<T>::type>::value
+    && (
+         std::is_same<ST, char32_t>::value
+      || std::is_same<ST, boost::optional<char32_t>>::value
+    )
+  >::type;
+
+  void operator()(ST& target, const T& value) {
+    char32_t converted;
+    // the next will throw if in error (return false only if the source is null and c_str() will never be null)
+    cnvSingleChar32<char32_t>(converted, value.c_str(), value.length());
+    target=converted;
+  }
+  // disable the rest of them
+  template <typename U> void operator()(ST& target, const U& value) {
+  }
+};
 template <>
-struct value_storer<char32_t> {
+struct value_storer<char32_t> :
+  public char32_storage_base<std::string, char32_t>
+{
   using value_type=std::string;
   using storage_type=char32_t;
-
-  void operator()(storage_type& target, const value_type& value) {
-    char32_t converted;
-    // the next will throw if in error (return false only if the source is null and c_str() will never be null)
-    cnvSingleChar32<char32_t>(converted, value.c_str(), value.length());
-    target=converted;
-  }
-  void operator()(storage_type& target, value_type&& value) {
-    char32_t converted;
-    // the next will throw if in error (return false only if the source is null and c_str() will never be null)
-    cnvSingleChar32<char32_t>(converted, value.c_str(), value.length());
-    target=converted;
-  }
-  // disable the rest of them
-  template <typename U> void operator()(storage_type& target, const U& value) {
-  }
   static bool init_storage(storage_type& target) {
     // do-nothing method - the assigment will be enough
     return true; // inited enough, so return true
@@ -280,35 +289,209 @@ struct value_storer<char32_t> {
 };
 
 template <>
-struct value_storer<boost::optional<char32_t>> {
+struct value_storer<boost::optional<char32_t>> :
+  public char32_storage_base<std::string, boost::optional<char32_t>>
+{
   using value_type=std::string;
   using storage_type=boost::optional<char32_t>;
-
-  void operator()(storage_type& target, const value_type& value) {
-    char32_t converted;
-    // the next will throw if in error (return false only if the source is null and c_str() will never be null)
-    cnvSingleChar32<char32_t>(converted, value.c_str(), value.length());
-    target=converted;
-  }
-  void operator()(storage_type& target, value_type&& value) {
-    char32_t converted;
-    // the next will throw if in error (return false only if the source is null and c_str() will never be null)
-    cnvSingleChar32<char32_t>(converted, value.c_str(), value.length());
-    target=converted;
-  }
-  // disable the rest of them
-  template <typename U> void operator()(storage_type& target, const U& value) {
-  }
   static bool init_storage(storage_type& target) {
     // do-nothing method - the assigment will be enough
     return true; // inited enough, so return true
   }
 };
 
-// FIXME value storers for datetime, date, time.
-///   In terms of std::chrono??? Or in terms of
-//    https://github.com/HowardHinnant/date ???
+template <typename T, typename ST>
+struct datetime_storer_base {
+  using guard=typename std::enable_if<
+       std::is_same<std::string, typename std::remove_cv<T>::type>::value
+    && (
+         std::is_same<ST, datetime_type>::value
+      || std::is_same<ST, boost::optional<datetime_type>>::value
+    )
+  >::type;
 
+  void operator()(ST& target, const T& value) {
+    static const char fmt1[]={'%','F', 'T', '%', 'T', 'Z','%', 'z', '\0'};
+    static const char fmt2[]={'%','F', 'T', '%', 'T', '\0'};
+    datetime_type converted;
+
+    std::istringstream in(value);
+    date::parse(in, fmt1, converted.datetime, converted.offset);
+    if(in.fail()) {
+      // attempt to do it without zulu time. Reset first the stream
+      in.clear();
+      in.str(value);
+      // and make sure the offset is set to 0 minutes
+      converted.offset=std::chrono::minutes::zero();
+      date::parse(in, fmt2, converted.datetime);
+    }
+    if(in.fail()) { //<Again? Oh, man
+      std::string msg{
+        "Invalid datetime (expected format YYYY-mm-ddTHH:MM:SS.sss{Z(+|-)hhmm}?). "
+        "Provided `"
+      };
+      msg.append(value).append("`");
+      throw invalid_input(msg.c_str());
+    }
+    // everything fine, perform the assgn
+    target=converted;
+  }
+  // disable the rest of them
+  template <typename U> void operator()(ST& target, const U& value) {
+  }
+};
+
+template <>
+struct value_storer<datetime_type> :
+  public datetime_storer_base<std::string,datetime_type>
+{
+  using value_type=std::string;
+  using storage_type=datetime_type;
+  static bool init_storage(storage_type& target) {
+    // do-nothing method - the assigment will be enough
+    return true; // inited enough, so return true
+  }
+};
+
+
+template <>
+struct value_storer<boost::optional<datetime_type>> :
+  public datetime_storer_base<std::string, boost::optional<datetime_type>>
+{
+  using value_type=std::string;
+  using storage_type=boost::optional<datetime_type>;
+  static bool init_storage(storage_type& target) {
+    // do-nothing method - the assigment will be enough
+    return true; // inited enough, so return true
+  }
+};
+
+template <typename T, typename ST>
+struct daytime_storer_base {
+  using guard=typename std::enable_if<
+       std::is_same<std::string, typename std::remove_cv<T>::type>::value
+    && (
+         std::is_same<ST, daytime_type>::value
+      || std::is_same<ST, boost::optional<daytime_type>>::value
+    )
+  >::type;
+
+  void operator()(ST& target, const T& value) {
+    static const char fmt1[]={'T', '%', 'T', 'Z','%', 'z', '\0'};
+    static const char fmt2[]={'T', '%', 'T', '\0'};
+    datetime_type aux;
+
+    std::istringstream in(value);
+    date::parse(in, fmt1, aux.datetime, aux.offset);
+    if(in.fail()) {
+      // attempt to do it without zulu time. Reset first the stream
+      in.clear();
+      in.str(value);
+      // and make sure the offset is set to 0 minutes
+      aux.offset=std::chrono::minutes::zero();
+      date::parse(in, fmt2, aux.datetime);
+    }
+    if(in.fail()) { //<Again? Oh, man
+      std::string msg{
+        "Invalid daytime (expected format THH:MM:SS.sss{Z(+|-)hhmm}?). "
+        "Provided `"
+      };
+      msg.append(value).append("`");
+      throw invalid_input(msg.c_str());
+    }
+    // everything fine, perform the assgn
+    daytime_type converted(
+      daytime_type::t_type(aux.datetime-date::floor<date::days>(aux.datetime)),
+      aux.offset
+    );
+    target=converted;
+  }
+  // disable the rest of them
+  template <typename U> void operator()(ST& target, const U& value) {
+  }
+};
+
+template <>
+struct value_storer<daytime_type> :
+  public daytime_storer_base<std::string,daytime_type>
+{
+  using value_type=std::string;
+  using storage_type=daytime_type;
+  static bool init_storage(storage_type& target) {
+    // do-nothing method - the assigment will be enough
+    return true; // inited enough, so return true
+  }
+};
+
+
+template <>
+struct value_storer<boost::optional<daytime_type>> :
+  public daytime_storer_base<std::string, boost::optional<daytime_type>>
+{
+  using value_type=std::string;
+  using storage_type=boost::optional<daytime_type>;
+  static bool init_storage(storage_type& target) {
+    // do-nothing method - the assigment will be enough
+    return true; // inited enough, so return true
+  }
+};
+
+template <typename T, typename ST>
+struct date_storer_base {
+  using guard=typename std::enable_if<
+       std::is_same<std::string, typename std::remove_cv<T>::type>::value
+    && (
+         std::is_same<ST, date_type>::value
+      || std::is_same<ST, boost::optional<date_type>>::value
+    )
+  >::type;
+
+  void operator()(ST& target, const T& value) {
+    static const char fmt[]={'%','F', '\0'};
+    date_type converted;
+
+    std::istringstream in(value);
+    date::parse(in, fmt, converted.date);
+    if(in.fail()) { //<Again? Oh, man
+      std::string msg{
+        "Invalid date (expected format YYYY-mm-dd). "
+        "Provided `"
+      };
+      msg.append(value).append("`");
+      throw invalid_input(msg.c_str());
+    }
+    // everything fine, perform the assgn
+    target=converted;
+  }
+  // disable the rest of them
+  template <typename U> void operator()(ST& target, const U& value) {
+  }
+};
+
+template <>
+struct value_storer<date_type> :
+  public date_storer_base<std::string,date_type>
+{
+  using value_type=std::string;
+  using storage_type=date_type;
+  static bool init_storage(storage_type& target) {
+    // do-nothing method - the assigment will be enough
+    return true; // inited enough, so return true
+  }
+};
+
+
+template <>
+struct value_storer<boost::optional<date_type>> :
+  public date_storer_base<std::string, boost::optional<date_type>>
+{
+  using value_type=std::string;
+  using storage_type=boost::optional<date_type>;
+  static bool init_storage(storage_type& target) {
+    // do-nothing method - the assigment will be enough
+    return true; // inited enough, so return true
+  }
+};
 
 // value_storers for structs/classes
 template<typename T>
@@ -481,7 +664,6 @@ struct deduce_val_handler<boost::optional<std::vector<T>>> {
 };
 
 
-} // namespace sax
 } // namespace jsonrsf
 
 

@@ -14,7 +14,6 @@
 #ifdef __cplusplus
 
 namespace jsonrsf {
-namespace sax {
 
 template <typename T, bool asArray=false> class SaxAdaptor
 {
@@ -118,6 +117,9 @@ public:
     }
     this->trace_.top()->handleString(str, length, copy);
   }
+  virtual void handleString(const std::string& str) {
+    this->handleString(str.c_str(), str.length(), true);
+  }
   virtual void handleObjStart() {
     if(this->trace_.empty()) {
       throw new invalid_input("Got `obj-start` after completion");
@@ -164,7 +166,6 @@ protected:
 };
 
 
-} // namespace sax
 } // namespace jsonrsf
 
 #endif /* __cplusplus */

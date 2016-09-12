@@ -5,6 +5,8 @@
  *      Author: acolomitchi
  */
 
+#include <locale>
+
 #include "typeout.hpp"
 
 #include <unordered_map>
@@ -13,7 +15,7 @@
 
 #include "rapidjson/adapter.hpp"
 
-namespace sx=jsonrsf::sax;
+namespace sx=jsonrsf;
 
 template <typename T> std::ostream& operator << (std::ostream& o, const std::vector<T>& val) {
   o << "[";
@@ -33,6 +35,9 @@ template <typename T> std::ostream& operator << (std::ostream& o, const std::vec
 
 struct a_struct {
   int alpha;
+  jsonrsf::datetime_type beta;
+  jsonrsf::daytime_type  gamma;
+  jsonrsf::date_type delta;
 };
 
 struct test_struct {
@@ -71,7 +76,12 @@ protected:
 };
 
 template <bool req> const std::unordered_map<std::string, int>
-AStructHandler<req>::_prop_ix_dict={ {"alpha", 0} };
+AStructHandler<req>::_prop_ix_dict={
+    {"alpha", 0},
+    {"beta", 1},
+    {"gamma", 2},
+    {"delta", 3}
+};
 
 template <bool req> sx::GenericSaxHandlerBase* AStructHandler<req>::
 createHandlerForCurrKey() {
@@ -80,13 +90,28 @@ createHandlerForCurrKey() {
     auto pos=AStructHandler::_prop_ix_dict.find(this->currKey_.get());
     if(pos!=AStructHandler::_prop_ix_dict.end()) {
       switch(pos->second) {
-        case 0:
-          toRet=new sx::deduce_sax_handler<decltype(a_struct::alpha)>::type(
-            (*(this->dest_)).alpha, this->trace_
-          );
-          break;
-        default:
-          break;
+      case 0:
+        toRet=new sx::deduce_sax_handler<decltype(a_struct::alpha)>::type(
+          (*(this->dest_)).alpha, this->trace_
+        );
+        break;
+      case 1:
+        toRet=new sx::deduce_sax_handler<decltype(a_struct::beta)>::type(
+          (*(this->dest_)).beta, this->trace_
+        );
+        break;
+      case 2:
+        toRet=new sx::deduce_sax_handler<decltype(a_struct::gamma)>::type(
+          (*(this->dest_)).gamma, this->trace_
+        );
+        break;
+      case 3:
+        toRet=new sx::deduce_sax_handler<decltype(a_struct::delta)>::type(
+          (*(this->dest_)).delta, this->trace_
+        );
+        break;
+      default:
+        break;
       }
       if(NULL==toRet) {
         throw invalid_input("Unhandled property with name "+this->currKey_.get());
@@ -96,12 +121,12 @@ createHandlerForCurrKey() {
   return toRet;
 }
 
-namespace jsonrsf { namespace sax {
+namespace jsonrsf {
   template <bool asRequired>
   struct deduce_sax_handler<a_struct, asRequired> {
     using type=AStructHandler<asRequired>;
   };
-}}
+}
 
 template <bool asRequired=false>
 class TestStructHandler :
@@ -138,12 +163,12 @@ TestStructHandler<req>::_prop_ix_dict=
       }
   ;
 
-namespace jsonrsf { namespace sax {
+namespace jsonrsf {
 template <bool asRequired>
   struct deduce_sax_handler<test_struct, asRequired> {
     using type=TestStructHandler<asRequired>;
   };
-}}
+}
 
 
 template <bool req> inline sx::GenericSaxHandlerBase* TestStructHandler<req>::
@@ -184,14 +209,47 @@ createHandlerForCurrKey() {
   return toRet;
 };
 
-
 #include  <stdint.h>
+#include <algorithm>
+
 int main() {
 
 //  typedef decltype(std::declval<test_struct>().~test_struct()) tstdes;
 //  outname<tstdes>("tsdes");
 
-  ::jsonrsf::rapidjson::RapidJsonSaxAdapter<test_struct> rjsonHandler;
+
+//  namespace d=date;
+//
+//  std::string toParse="T08:45:05Z+1000";
+//  std::string fmt="T%TZ%z";
+//
+//  std::string abbrev;
+//  std::chrono::minutes offset;
+
+
+  //  auto recovered=
+//    std::chrono::time_point_cast<
+//      std::chrono::system_clock,
+//      std::chrono::milliseconds
+//    >
+//    (std::chrono::milliseconds(secs*1000+millies)
+//  );
+
+
+
+//  std::istringstream input;
+//  d::local_time<std::chrono::milliseconds> parsedDate;
+//  input.clear();
+//  input.str(toParse);
+//  d::parse(input, fmt.c_str(), parsedDate, offset);
+//  if(input.fail()) {
+//    std::cout <<"Failed to parse input date:`"<<toParse<<"`"<<std::endl;
+//  }
+//  else {
+//    std::cout <<d::format("T%T", parsedDate) << " with offset "<< offset.count() << std::endl;
+//  }
+//
+//  ::jsonrsf::rapidjson::RapidJsonSaxAdapter<test_struct> rjsonHandler;
 
   sx::SaxAdaptor<test_struct> adapter;
 
@@ -210,6 +268,12 @@ int main() {
   adapter.handleObjStart();
   adapter.handleKey("alpha",5, true);
   adapter.handleInt(43);
+  adapter.handleKey("beta",4, true);
+  adapter.handleString(std::string("2016-09-12T12:52:45Z+1000"));
+  adapter.handleKey("gamma",5, true);
+  adapter.handleString(std::string("T12:52:45Z+1000"));
+  adapter.handleKey("delta",5, true);
+  adapter.handleString(std::string("2016-09-12"));
   adapter.handleObjEnd();
   adapter.handleArrayEnd();
 
@@ -221,5 +285,4 @@ int main() {
   assert(parsed->d.get().size()==2);
   return 0;
 }
-
 

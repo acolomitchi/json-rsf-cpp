@@ -13,11 +13,11 @@
 #include <boost/optional.hpp>
 
 #include "../common/exceptions.hpp"
+#include "../common/date_types.hpp"
 
 namespace jsonrsf {
-namespace sax {
 
-template <typename T> struct sax_array_utils {
+template <typename T> struct array_utils {
   static constexpr bool is_array=false;
   static std::size_t size(const T& x) {
     assert(is_array); // this should stop it while running a debug build
@@ -27,7 +27,7 @@ template <typename T> struct sax_array_utils {
 };
 
 template <typename T>
-struct sax_array_utils<std::vector<T>> {
+struct array_utils<std::vector<T>> {
   static constexpr bool is_array=true;
 
   static std::size_t size(const std::vector<T>& storage) {
@@ -47,7 +47,7 @@ struct sax_array_utils<std::vector<T>> {
 };
 
 template <typename T>
-struct sax_array_utils<boost::optional<std::vector<T>>> {
+struct array_utils<boost::optional<std::vector<T>>> {
   static constexpr bool is_array=true;
 
   static std::size_t size(const boost::optional<std::vector<T>>& storage) {
@@ -76,7 +76,18 @@ template <typename T> struct is_json_primitive {
          std::is_arithmetic<T>::value
       || std::is_enum<typename std::remove_cv<T>::type>::value
       || std::is_same<std::string, typename std::remove_cv<T>::type>::value
-      // FIXME add chrono types
+      || std::is_same<
+             jsonrsf::datetime_type, // used for datetime
+             typename std::remove_cv<T>::type
+         >::value
+      || std::is_same< // used for date
+             jsonrsf::date_type,
+             typename std::remove_cv<T>::type
+         >::value
+      || std::is_same< // used for time
+             jsonrsf::daytime_type,
+             typename std::remove_cv<T>::type
+         >::value
    ;
 };
 
@@ -121,17 +132,26 @@ template <typename T> struct handled_by_str :
   public std::integral_constant<bool,
        std::is_same<T, std::string>::value
     || std::is_same<T, char32_t>::value
+    || std::is_same<
+           jsonrsf::datetime_type, // used for datetime
+           typename std::remove_cv<T>::type
+       >::value
+    || std::is_same< // used for date
+           jsonrsf::date_type,
+           typename std::remove_cv<T>::type
+       >::value
+    || std::is_same< // used for time
+           jsonrsf::daytime_type,
+           typename std::remove_cv<T>::type
+       >::value
   >
 {
 };
 
 template <typename T>
-struct handled_by_str<boost::optional<T>> :
-  public std::integral_constant<bool,
-       std::is_same<T, std::string>::value
-    || std::is_same<T, char32_t>::value
-  >
+struct handled_by_str<boost::optional<T>>
 {
+  static constexpr bool value=handled_by_str<T>::value;
 };
 
 template <typename T>
@@ -144,13 +164,11 @@ struct handled_by_str<std::vector<T>> :
 };
 
 template <typename T>
-struct handled_by_str<boost::optional<std::vector<T>>> :
-  public std::integral_constant<bool,
-       std::is_same<T, std::string>::value
-    || std::is_same<T, char32_t>::value
-  >
+struct handled_by_str<boost::optional<std::vector<T>>>
 {
+  static constexpr bool value=handled_by_str<T>::value;
 };
+
 
 template <typename T> struct handled_by_primitive;
 
@@ -240,7 +258,6 @@ struct deduce_storage_type {
 };
 
 
-} // namespace sax
 } // namespace jsonrsf
 
 #endif /* JSON_TYPES_HPP_ */

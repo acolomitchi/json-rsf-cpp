@@ -18,7 +18,7 @@ namespace jsonrsf {
 namespace rapidjson {
 
 template <typename T, bool asArray=false> class RapidJsonSaxAdapter :
-    public ::jsonrsf::sax::SaxAdaptor<T, asArray>
+    public ::jsonrsf::SaxAdaptor<T, asArray>
 {
 protected:
   std::string lastErrorMsg_;
@@ -35,7 +35,7 @@ protected:
   }
 public:
   RapidJsonSaxAdapter() :
-    ::jsonrsf::sax::SaxAdaptor<T, asArray>(), lastErrorMsg_()
+    ::jsonrsf::SaxAdaptor<T, asArray>(), lastErrorMsg_()
   {
   }
   ~RapidJsonSaxAdapter() { }

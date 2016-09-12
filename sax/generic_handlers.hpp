@@ -17,7 +17,6 @@
 #include "primitive_ops.hpp"
 
 namespace jsonrsf {
-namespace sax {
 
 // Forward declaration
 class GenericSaxHandlerBase;
@@ -190,7 +189,7 @@ protected:
     if(handled_by_num<value_type>::value) {
       value_handler h;
       h(this->dest_, value);
-      if(false==sax_array_utils<target_type>::is_array) {
+      if(false==array_utils<target_type>::is_array) {
         this->removeSelfIfTopTrace();
       }
       return true;
@@ -287,7 +286,7 @@ public:
         if(false==copy) {
           delete[] val;
         }
-        if(false==sax_array_utils<target_type>::is_array) {
+        if(false==array_utils<target_type>::is_array) {
           this->removeSelfIfTopTrace();
         }
       }
@@ -302,7 +301,7 @@ public:
   }
 
   virtual void handleArrayStart() {
-    if(false==sax_array_utils<target_type>::is_array) {
+    if(false==array_utils<target_type>::is_array) {
       GenericSaxHandlerBase::handleArrayStart();
     }
     else {
@@ -316,7 +315,7 @@ public:
     }
   }
   virtual void handleArrayEnd() {
-    if(false==sax_array_utils<target_type>::is_array) {
+    if(false==array_utils<target_type>::is_array) {
       GenericSaxHandlerBase::handleArrayStart();
     }
     else {
@@ -327,9 +326,9 @@ public:
   }
 
   virtual void inferErrorLocation(std::string& resultHere) {
-    if(sax_array_utils<target_type>::is_array) {
+    if(array_utils<target_type>::is_array) {
       // this is a piece of code assumed to be optimized out for levels > -O0
-      std::size_t pos=sax_array_utils<target_type>::size(this->dest_);
+      std::size_t pos=array_utils<target_type>::size(this->dest_);
       if(this->trace_.top().get()!=this) {
         assert(pos>0);
         // I'm not on the top of the trace...
@@ -388,17 +387,17 @@ public:
   virtual void handleObjStart() {
     // need to create a handler for the element,
     // push if on the stack and delegate the objStart to the handler
-    sax_array_utils<storage_type>::push_back(this->dest_, value_type());
+    array_utils<storage_type>::push_back(this->dest_, value_type());
 
     using elemHandlerType=typename deduce_sax_handler<value_type>::type;
-    value_type& last=sax_array_utils<storage_type>::back(this->dest_);
+    value_type& last=array_utils<storage_type>::back(this->dest_);
     elemHandlerType* handler=new elemHandlerType(last, this->trace_);
     this->trace_.push(std::unique_ptr<elemHandlerType>(handler));
     this->trace_.top()->handleObjStart();
   }
 
   virtual void inferErrorLocation(std::string& resultHere) {
-    std::size_t pos=sax_array_utils<storage_type>::size(this->dest_);
+    std::size_t pos=array_utils<storage_type>::size(this->dest_);
     if(this->trace_.top().get()!=this) {
       assert(pos>0);
       // I'm not on the top of the trace...
@@ -512,7 +511,6 @@ public:
 };
 
 
-} // namespace sax
 } // namespace jsonrsf
 
 #endif /* __cplusplus */
