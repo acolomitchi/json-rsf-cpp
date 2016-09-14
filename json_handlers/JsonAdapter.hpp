@@ -5,33 +5,43 @@
  *      Author: acolomitchi
  */
 
-#ifndef SAX_SAXADAPTOR_HPP_
-#define SAX_SAXADAPTOR_HPP_
+#ifndef JSON_HANDLERS_JSONADAPTER_HPP_
+#define JSON_HANDLERS_JSONADAPTER_HPP_
 
 
-#include "generic_handlers.hpp"
+#include "../json_handlers/generic_handlers.hpp"
 
 #ifdef __cplusplus
 
 namespace jsonrsf {
 
-template <typename T, bool asArray=false> class SaxAdaptor
+template <typename T, bool asArray=false> class JsonAdapter
 {
 public:
   using storage_type=typename deduce_storage_type<T, asArray, true>::type;
 
-  SaxAdaptor() : data_(), trace_()
+  JsonAdapter() : data_(), trace_()
   {
     using first_handler_type=
-      typename deduce_sax_handler<T>::type
+      typename deduce_json_handler<T>::type
     ;
-    GenericSaxHandlerBase* first=
+    GenericJsonHandlerBase* first=
       new first_handler_type(this->data_, this->trace_)
     ;
-    this->trace_.push(std::unique_ptr<GenericSaxHandlerBase>(first));
+    this->trace_.push(std::unique_ptr<GenericJsonHandlerBase>(first));
   }
 
-  virtual ~SaxAdaptor() {
+  virtual ~JsonAdapter() {
+  }
+
+  void emitData(Emitter& target, bool skipNullProps=true) {
+    if(NULL!=this->data_) {
+      using first_handler_type=
+        typename deduce_json_handler<T>::type
+      ;
+      auto first=first_handler_type(this->data_, this->trace_);
+      first.emit(target, skipNullProps);
+    }
   }
 
   storage_type& getData() {
@@ -113,7 +123,7 @@ public:
   }
   virtual void handleString(const char* str, std::size_t length, bool copy) {
     if(this->trace_.empty()) {
-      throw new invalid_input("Got `sring` after completion");
+      throw new invalid_input("Got `string` after completion");
     }
     this->trace_.top()->handleString(str, length, copy);
   }
@@ -171,4 +181,4 @@ protected:
 #endif /* __cplusplus */
 
 
-#endif /* SAX_SAXADAPTOR_HPP_ */
+#endif /* JSON_HANDLERS_JSONADAPTER_HPP_ */

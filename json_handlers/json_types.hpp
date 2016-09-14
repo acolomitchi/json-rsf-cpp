@@ -44,6 +44,10 @@ struct array_utils<std::vector<T>> {
   static T& back(std::vector<T>& dest) {
     return dest.back();
   }
+
+  static std::vector<T>* addr(std::vector<T>& dest) {
+    return &dest;
+  }
 };
 
 template <typename T>
@@ -68,6 +72,9 @@ struct array_utils<boost::optional<std::vector<T>>> {
   static T& back(boost::optional<std::vector<T>>& dest) {
     return (*dest).back();
   }
+  static std::vector<T>* addr(boost::optional<std::vector<T>>& dest) {
+    return dest ? dest.get_ptr() : NULL;
+  }
 };
 
 
@@ -89,6 +96,23 @@ template <typename T> struct is_json_primitive {
              typename std::remove_cv<T>::type
          >::value
    ;
+};
+
+template <typename T> struct is_temporal {
+  static constexpr bool value=
+       std::is_same<
+           jsonrsf::datetime_type, // used for datetime
+           typename std::remove_cv<T>::type
+       >::value
+    || std::is_same< // used for date
+           jsonrsf::date_type,
+           typename std::remove_cv<T>::type
+       >::value
+    || std::is_same< // used for time
+           jsonrsf::daytime_type,
+           typename std::remove_cv<T>::type
+       >::value
+    ;
 };
 
 template <typename T> struct handled_by_num :
@@ -132,18 +156,7 @@ template <typename T> struct handled_by_str :
   public std::integral_constant<bool,
        std::is_same<T, std::string>::value
     || std::is_same<T, char32_t>::value
-    || std::is_same<
-           jsonrsf::datetime_type, // used for datetime
-           typename std::remove_cv<T>::type
-       >::value
-    || std::is_same< // used for date
-           jsonrsf::date_type,
-           typename std::remove_cv<T>::type
-       >::value
-    || std::is_same< // used for time
-           jsonrsf::daytime_type,
-           typename std::remove_cv<T>::type
-       >::value
+    || is_temporal<T>::value
   >
 {
 };
@@ -156,10 +169,7 @@ struct handled_by_str<boost::optional<T>>
 
 template <typename T>
 struct handled_by_str<std::vector<T>> :
-  public std::integral_constant<bool,
-       std::is_same<T, std::string>::value
-    || std::is_same<T, char32_t>::value
-  >
+  public std::integral_constant<bool, handled_by_str<T>::value>
 {
 };
 

@@ -8,6 +8,7 @@
 #ifndef HANDLER_OPS_HPP_
 #define HANDLER_OPS_HPP_
 
+#include <algorithm>
 #include <stdexcept>
 #include <vector>
 #include <sstream>
@@ -15,6 +16,7 @@
 #include "../common/utf8.hpp"
 #include "../common/exceptions.hpp"
 #include "json_types.hpp"
+#include "emitter.hpp"
 
 namespace jsonrsf {
 
@@ -138,54 +140,71 @@ struct deduce_null_handler<T, true> {
 // forward declarations
 template <typename T> struct deduce_val_handler;
 
-template <typename T>
-struct value_storer  {
-  using value_type=
-    typename std::enable_if<std::is_arithmetic<T>::value, T>::type;
-  using storage_type=
-    typename std::enable_if<
-        std::is_arithmetic<T>::value,
-        T
-    >::type;
-
-
-  template <typename U> void operator()(storage_type& target, const U& value) {
-    target=static_cast<value_type>(value);
-  }
-  // disable the rest of them
-  void operator()(storage_type& target, const std::string& value) {
-  }
-  void operator()(storage_type& target, std::string&& value) {
-  }
-  static bool init_storage(storage_type& target) {
-    // do-nothing method - the assigment will be enough
+template <typename ST>
+struct st_hndlr_base {
+  bool init_storage(ST& target) {
     return true; // inited enough, so return true
+  }
+  void emit(const ST& v, Emitter& target) {
+    target.emit(v);
   }
 };
 
 template <typename T>
-struct value_storer<boost::optional<T>> {
-  using value_type=
-    typename std::enable_if<std::is_arithmetic<T>::value, T>::type;
-  using storage_type=
-    typename std::enable_if<
-        std::is_arithmetic<T>::value,
-        boost::optional<T>
-    >::type;
+struct st_hndlr_base<boost::optional<T>> {
+  bool init_storage(T& target) {
+    return true; // inited enough, so return true
+  }
+  void emit(const boost::optional<T>& v, Emitter& target) {
+    if(v) {
+      target.emit(*v);
+    }
+    else {
+      target.emit(); // emit null
+    }
+  }
+};
 
-  template <typename U> void operator()(storage_type& target, const U& value) {
+template <typename T>
+struct prim_val_handler : public st_hndlr_base<T> {
+  template <typename X> using pred=std::is_arithmetic<X>;
+
+  using value_type=typename std::enable_if<pred<T>::value, T>::type;
+  using storage_type=typename std::enable_if<pred<T>::value, T>::type;
+
+  template <typename U>
+  typename std::enable_if<pred<U>::value>::type
+  operator()(storage_type& target, const U& value) {
     target=static_cast<value_type>(value);
   }
-  // disable the rest of them
+  // inactivate the rest of them
   void operator()(storage_type& target, const std::string& value) {
   }
   void operator()(storage_type& target, std::string&& value) {
   }
-  static bool init_storage(storage_type& target) {
-    // do-nothing method - the assigment will be enough
-    return true; // inited enough, so return true
+};
+
+template <typename T>
+struct prim_val_handler<boost::optional<T>> :
+  public st_hndlr_base<boost::optional<T>>
+{
+  template <typename X> using pred=std::is_arithmetic<X>;
+
+  using value_type=typename std::enable_if<pred<T>::value, T>::type;
+  using storage_type=typename std::enable_if<pred<T>::value, boost::optional<T>>::type;
+
+  template <typename U>
+  typename std::enable_if<pred<U>::value>::type
+  operator()(storage_type& target, const U& value) {
+    target=static_cast<value_type>(value);
+  }
+  // inactivate the rest of them
+  void operator()(storage_type& target, const std::string& value) {
+  }
+  void operator()(storage_type& target, std::string&& value) {
   }
 };
+
 
 template <typename T, typename ST>
 struct str_storer_base {
@@ -203,35 +222,33 @@ struct str_storer_base {
   void operator()(ST& target, T&& value) {
     target=value;
   }
-  // disable the rest of them
-  template <typename U> void operator()(ST& target, const U& value) {
+  // inactivate the rest of them
+  template <typename U>
+  typename std::enable_if<std::is_arithmetic<U>::value>::type
+  operator()(ST& target, const U& value)
+  {
   }
 };
 
 template <>
-struct value_storer<std::string> :
-public str_storer_base<std::string, std::string> {
+struct prim_val_handler<std::string> :
+  public str_storer_base<std::string, std::string>,
+  public st_hndlr_base<std::string>
+{
   using value_type=std::string;
   using storage_type=std::string;
-
-  static bool init_storage(storage_type& target) {
-    // do-nothing method - the assigment will be enough
-    return true; // inited enough, so return true
-  }
 };
 
 template <>
-struct value_storer<boost::optional<std::string>> :
-public str_storer_base<std::string, boost::optional<std::string>>{
+struct prim_val_handler<boost::optional<std::string>> :
+  public str_storer_base<std::string, boost::optional<std::string>>,
+  public st_hndlr_base<boost::optional<std::string>>
+{
   using value_type=std::string;
   using storage_type=boost::optional<std::string>;
-  static bool init_storage(storage_type& target) {
-    // do-nothing method - the assigment will be enough
-    return true; // inited enough, so return true
-  }
 };
 
-template <typename ch32DestT> bool cnvSingleChar32(
+template <typename ch32DestT> bool codepoint32FromUtf8(
     ch32DestT& dest, const char* utf8Src, std::size_t length
 ) {
   char32_t buff;
@@ -256,6 +273,7 @@ template <typename ch32DestT> bool cnvSingleChar32(
   return toRet;
 }
 
+
 template <typename T, typename ST>
 struct char32_storage_base {
   using guard=typename std::enable_if<
@@ -269,34 +287,75 @@ struct char32_storage_base {
   void operator()(ST& target, const T& value) {
     char32_t converted;
     // the next will throw if in error (return false only if the source is null and c_str() will never be null)
-    cnvSingleChar32<char32_t>(converted, value.c_str(), value.length());
+    codepoint32FromUtf8<char32_t>(converted, value.c_str(), value.length());
     target=converted;
   }
-  // disable the rest of them
-  template <typename U> void operator()(ST& target, const U& value) {
+  // inactivate the rest of them
+  template <typename U>
+  typename std::enable_if<std::is_arithmetic<U>::value>::type
+  operator()(ST& target, const U& value)
+  {
+  }
+
+  void doEmit(const char32_t& cp, Emitter& target) {
+    bool toRet=(cp <= 0x10FFFF);
+    if(toRet) {
+      std::string buff;
+      if (cp <= 0x7F) {
+        buff+=static_cast<char>(cp & 0xFF);
+      }
+      else if (cp <= 0x7FF) {
+        buff+=static_cast<char>(0xC0 | ((cp >> 6) & 0xFF));
+        buff+=static_cast<char>(0x80 | ((cp & 0x3F)));
+      }
+      else if (cp <= 0xFFFF) {
+        buff+=static_cast<char>(0xE0 | ((cp >> 12) & 0xFF));
+        buff+=static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        buff+=static_cast<char>(0x80 | (cp & 0x3F));
+      }
+      else {
+        buff+=static_cast<char>(0xF0 | ((cp >> 18) & 0xFF));
+        buff+=static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+        buff+=static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        buff+=static_cast<char>(0x80 | (cp & 0x3F));
+      }
+      target.emit(buff);
+    }
+    else {
+      std::ostringstream buff("Invalid UNICODE codepoint: ");
+      buff << std::hex << std::showbase << cp;
+      throw std::invalid_argument(buff.str().c_str());
+    }
   }
 };
 template <>
-struct value_storer<char32_t> :
-  public char32_storage_base<std::string, char32_t>
+struct prim_val_handler<char32_t> :
+  public char32_storage_base<std::string, char32_t>,
+  public st_hndlr_base<char32_t>
 {
   using value_type=std::string;
   using storage_type=char32_t;
-  static bool init_storage(storage_type& target) {
-    // do-nothing method - the assigment will be enough
-    return true; // inited enough, so return true
+
+  void emit(const storage_type& v, Emitter& target) {
+    this->doEmit(v, target);
   }
 };
 
 template <>
-struct value_storer<boost::optional<char32_t>> :
-  public char32_storage_base<std::string, boost::optional<char32_t>>
+struct prim_val_handler<boost::optional<char32_t>> :
+  public char32_storage_base<std::string, boost::optional<char32_t>>,
+  public st_hndlr_base<boost::optional<char32_t>>
 {
   using value_type=std::string;
   using storage_type=boost::optional<char32_t>;
-  static bool init_storage(storage_type& target) {
-    // do-nothing method - the assigment will be enough
-    return true; // inited enough, so return true
+
+  void emit(const storage_type& v, Emitter& target) {
+    if(v) {
+      this->doEmit(*v, target);
+    }
+    else {
+      target.emit(); // emit null
+    }
   }
 };
 
@@ -336,33 +395,53 @@ struct datetime_storer_base {
     // everything fine, perform the assgn
     target=converted;
   }
-  // disable the rest of them
-  template <typename U> void operator()(ST& target, const U& value) {
+  // inactivate the rest of them
+  template <typename U>
+  typename std::enable_if<std::is_arithmetic<U>::value>::type
+  operator()(ST& target, const U& value)
+  {
+  }
+
+  void doEmit(const datetime_type& v, Emitter& target) {
+    std::string fmt("%Y-%m-%dT%TZ%z");
+    std::chrono::seconds secs(v.offset);
+    std::string val=date::detail::format(
+      std::locale{}, fmt, v.datetime,
+      nullptr /* no abbrev */, &secs
+    );
+    target.emit(val);
   }
 };
 
 template <>
-struct value_storer<datetime_type> :
-  public datetime_storer_base<std::string,datetime_type>
+struct prim_val_handler<datetime_type> :
+  public datetime_storer_base<std::string,datetime_type>,
+  public st_hndlr_base<datetime_type>
 {
   using value_type=std::string;
   using storage_type=datetime_type;
-  static bool init_storage(storage_type& target) {
-    // do-nothing method - the assigment will be enough
-    return true; // inited enough, so return true
+
+  void emit(const storage_type& v, Emitter& target) {
+    this->doEmit(v, target);
   }
 };
 
 
 template <>
-struct value_storer<boost::optional<datetime_type>> :
-  public datetime_storer_base<std::string, boost::optional<datetime_type>>
+struct prim_val_handler<boost::optional<datetime_type>> :
+  public datetime_storer_base<std::string, boost::optional<datetime_type>>,
+  public st_hndlr_base<boost::optional<datetime_type>>
 {
   using value_type=std::string;
   using storage_type=boost::optional<datetime_type>;
-  static bool init_storage(storage_type& target) {
-    // do-nothing method - the assigment will be enough
-    return true; // inited enough, so return true
+
+  void emit(const storage_type& v, Emitter& target) {
+    if(v) {
+      this->doEmit(*v, target);
+    }
+    else {
+      target.emit(); // emit null
+    }
   }
 };
 
@@ -406,33 +485,53 @@ struct daytime_storer_base {
     );
     target=converted;
   }
-  // disable the rest of them
-  template <typename U> void operator()(ST& target, const U& value) {
+  // inactivate the rest of them
+  template <typename U>
+  typename std::enable_if<std::is_arithmetic<U>::value>::type
+  operator()(ST& target, const U& value) {
+  }
+
+  void doEmit(const daytime_type& v, Emitter& target) {
+    std::ostringstream c("T");
+    c << v.time_of_day << "Z" ;
+    auto cnt=v.offset.count();
+    int h=cnt/60,m=std::abs(cnt%60);
+    c.fill('0');
+    c.width(2);
+    c << std::showpos << h <<std::noshowpos<<m;
+    target.emit(c.str().c_str());
   }
 };
 
 template <>
-struct value_storer<daytime_type> :
-  public daytime_storer_base<std::string,daytime_type>
+struct prim_val_handler<daytime_type> :
+  public daytime_storer_base<std::string,daytime_type>,
+  public st_hndlr_base<daytime_type>
 {
   using value_type=std::string;
   using storage_type=daytime_type;
-  static bool init_storage(storage_type& target) {
-    // do-nothing method - the assigment will be enough
-    return true; // inited enough, so return true
+
+  void emit(const storage_type& v, Emitter& target) {
+    this->doEmit(v, target);
   }
 };
 
 
 template <>
-struct value_storer<boost::optional<daytime_type>> :
-  public daytime_storer_base<std::string, boost::optional<daytime_type>>
+struct prim_val_handler<boost::optional<daytime_type>> :
+  public daytime_storer_base<std::string, boost::optional<daytime_type>>,
+  public st_hndlr_base<boost::optional<daytime_type>>
 {
   using value_type=std::string;
   using storage_type=boost::optional<daytime_type>;
-  static bool init_storage(storage_type& target) {
-    // do-nothing method - the assigment will be enough
-    return true; // inited enough, so return true
+
+  void emit(const storage_type& v, Emitter& target) {
+    if(v) {
+      this->doEmit(*v, target);
+    }
+    else {
+      target.emit(); // emit null
+    }
   }
 };
 
@@ -463,39 +562,52 @@ struct date_storer_base {
     // everything fine, perform the assgn
     target=converted;
   }
-  // disable the rest of them
+  // inactivate the rest of them
   template <typename U> void operator()(ST& target, const U& value) {
+  }
+
+  void doEmit(const date_type& v, Emitter& target) {
+    static const char* fmt="%Y-%m-%d";
+    std::string val=date::format(fmt, v.date);
+    target.emit(val);
   }
 };
 
 template <>
-struct value_storer<date_type> :
-  public date_storer_base<std::string,date_type>
+struct prim_val_handler<date_type> :
+  public date_storer_base<std::string,date_type>,
+  public st_hndlr_base<date_type>
 {
   using value_type=std::string;
   using storage_type=date_type;
-  static bool init_storage(storage_type& target) {
-    // do-nothing method - the assigment will be enough
-    return true; // inited enough, so return true
+
+  void emit(const storage_type& v, Emitter& target) {
+    this->doEmit(v, target);
   }
 };
 
 
 template <>
-struct value_storer<boost::optional<date_type>> :
-  public date_storer_base<std::string, boost::optional<date_type>>
+struct prim_val_handler<boost::optional<date_type>> :
+  public date_storer_base<std::string, boost::optional<date_type>>,
+  public st_hndlr_base<boost::optional<date_type>>
 {
   using value_type=std::string;
   using storage_type=boost::optional<date_type>;
-  static bool init_storage(storage_type& target) {
-    // do-nothing method - the assigment will be enough
-    return true; // inited enough, so return true
+
+  void emit(const storage_type& v, Emitter& target) {
+    if(v) {
+      this->doEmit(*v, target);
+    }
+    else {
+      target.emit(); // emit null
+    }
   }
 };
 
 // value_storers for structs/classes
 template<typename T>
-struct value_storer<std::shared_ptr<T>> {
+struct prim_val_handler<std::shared_ptr<T>> {
   using elem_type=typename std::enable_if<std::is_class<T>::value,T>::type;
   using value_type=std::shared_ptr<elem_type>;
   using storage_type=std::shared_ptr<elem_type>;
@@ -506,17 +618,17 @@ struct value_storer<std::shared_ptr<T>> {
   void operator()(storage_type& target, value_type&& value) {
     target=value;
   }
-  // disable the rest of them
+  // inactivate the rest of them
   template <typename U> void operator()(storage_type& target, const U& value) {
   }
-  static bool init_storage(storage_type& target) {
+  bool init_storage(storage_type& target) {
     // do-nothing method - the assigment will be enough
     return true; // inited enough, so return true
   }
 };
 
 template<typename T>
-struct value_storer<std::unique_ptr<T>> {
+struct prim_val_handler<std::unique_ptr<T>> {
   using elem_type=typename std::enable_if<std::is_class<T>::value,T>::type;
   using value_type=std::unique_ptr<elem_type>;
   using storage_type=std::unique_ptr<elem_type>;
@@ -527,10 +639,10 @@ struct value_storer<std::unique_ptr<T>> {
   void operator()(storage_type& target, value_type&& value) {
     target=value;
   }
-  // disable the rest of them
+  // inactivate the rest of them
   template <typename U> void operator()(storage_type& target, const U& value) {
   }
-  static bool init_storage(storage_type& target) {
+  bool init_storage(storage_type& target) {
     // do-nothing method - the assigment will be enough
     return true; // inited enough, so return true
   }
@@ -543,7 +655,7 @@ struct deduce_val_handler {
   using type=
     typename std::enable_if<
       is_json_primitive<T>::value,
-      value_storer<T>
+      prim_val_handler<T>
     >::type;
 };
 template <typename T>
@@ -551,7 +663,7 @@ struct deduce_val_handler<boost::optional<T>> {
   using type=
     typename std::enable_if<
       is_json_primitive<T>::value,
-      value_storer<boost::optional<T>>
+      prim_val_handler<boost::optional<T>>
     >::type;
 };
 
@@ -560,7 +672,7 @@ struct deduce_val_handler<std::shared_ptr<T>> {
   using type=
     typename std::enable_if<
       std::is_class<T>::value,
-      value_storer<std::shared_ptr<T>>
+      prim_val_handler<std::shared_ptr<T>>
     >::type;
 };
 
@@ -569,7 +681,7 @@ struct deduce_val_handler<std::unique_ptr<T>> {
   using type=
     typename std::enable_if<
       std::is_class<T>::value,
-      value_storer<std::unique_ptr<T>>
+      prim_val_handler<std::unique_ptr<T>>
     >::type;
 };
 
@@ -588,6 +700,7 @@ struct array_storer_base<value_storer, false> {
     h(val, value);
     target.push_back(val);
   }
+
 };
 
 template <class value_storer>
@@ -627,8 +740,16 @@ struct array_storer<std::vector<T>> {
     delegate(target, value);
   }
 
-  template <bool strict=true> static bool init_storage(storage_type& target) {
-    return (false==strict || target.empty());
+  bool init_storage(storage_type& target) {
+    return target.empty();
+  }
+
+  void emit(const storage_type& storage, Emitter& target) {
+    target.emitArrayStart();
+    for(auto x : storage) {
+      target.emit(x);
+    }
+    target.emitArrayEnd();
   }
 };
 
@@ -644,13 +765,25 @@ struct array_storer<boost::optional<std::vector<T>>> {
     base_storer_type delegate;
     delegate(target, value);
   }
-  template <bool strict=true> static bool init_storage(storage_type& target) {
+  bool init_storage(storage_type& target) {
     if(false==target) {
       std::vector<value_type> empty;
       target=std::move(empty);
       return true;
     }
-    return (false==strict || target);
+    return target && (*target).empty();
+  }
+  void emit(const storage_type& storage, Emitter& target) {
+    if(storage) {
+      target.emitArrayStart();
+      for(auto x : *storage) {
+        target.emit(x);
+      }
+    }
+    else {
+      target.emit(); // emit null
+    }
+    target.emitArrayEnd();
   }
 };
 

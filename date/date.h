@@ -231,6 +231,7 @@ class day
     unsigned char d_;
 
 public:
+    day() = default;
     explicit CONSTCD11 day(unsigned d) NOEXCEPT;
 
     CONSTCD14 day& operator++()    NOEXCEPT;
@@ -268,6 +269,7 @@ class month
     unsigned char m_;
 
 public:
+    month() = default;
     explicit CONSTCD11 month(unsigned m) NOEXCEPT;
 
     CONSTCD14 month& operator++()    NOEXCEPT;
@@ -305,6 +307,7 @@ class year
     short y_;
 
 public:
+    year() = default;
     explicit CONSTCD11 year(int y) NOEXCEPT;
 
     CONSTCD14 year& operator++()    NOEXCEPT;
@@ -346,6 +349,7 @@ class weekday
 {
     unsigned char wd_;
 public:
+    weekday() = default;
     explicit CONSTCD11 weekday(unsigned wd) NOEXCEPT;
     explicit weekday(int) = delete;
     CONSTCD11 weekday(const sys_days& dp) NOEXCEPT;
@@ -431,6 +435,7 @@ class year_month
     date::month m_;
 
 public:
+    year_month() = default;
     CONSTCD11 year_month(const date::year& y, const date::month& m) NOEXCEPT;
 
     CONSTCD11 date::year  year()  const NOEXCEPT;
@@ -472,6 +477,7 @@ class month_day
     date::day   d_;
 
 public:
+    month_day() = default;
     CONSTCD11 month_day(const date::month& m, const date::day& d) NOEXCEPT;
 
     CONSTCD11 date::month month() const NOEXCEPT;
@@ -573,6 +579,7 @@ class year_month_day
     date::day   d_;
 
 public:
+    year_month_day() = default;
     CONSTCD11 year_month_day(const date::year& y, const date::month& m,
                              const date::day& d) NOEXCEPT;
     CONSTCD14 year_month_day(const year_month_day_last& ymdl) NOEXCEPT;
@@ -692,6 +699,7 @@ class year_month_weekday
     date::weekday_indexed wdi_;
 
 public:
+    year_month_weekday() = default;
     CONSTCD11 year_month_weekday(const date::year& y, const date::month& m,
                                    const date::weekday_indexed& wdi) NOEXCEPT;
     CONSTCD14 year_month_weekday(const sys_days& dp) NOEXCEPT;
@@ -963,8 +971,19 @@ trunc(const std::chrono::duration<Rep, Period>& d)
     return To{detail::trunc(std::chrono::duration_cast<To>(d).count())};
 }
 
-// VS Update 2 provides floor, ceil, round, abs in chrono.
-#if (defined(_MSC_FULL_VER) && _MSC_FULL_VER < 190023918) || __cplusplus <= 201402
+#ifndef HAS_CHRONO_ROUNDING
+#  if defined(_MSC_FULL_VER) && _MSC_FULL_VER >= 190023918
+#    define HAS_CHRONO_ROUNDING 1
+#  elif defined(__cpp_lib_chrono) && __cplusplus > 201402 && __cpp_lib_chrono >= 201510
+#    define HAS_CHRONO_ROUNDING 1
+#  elif defined(_LIBCPP_VERSION) && __cplusplus > 201402 && _LIBCPP_VERSION >= 3800
+#    define HAS_CHRONO_ROUNDING 1
+#  else
+#    define HAS_CHRONO_ROUNDING 0
+#  endif
+#endif  // HAS_CHRONO_ROUNDING
+
+#if HAS_CHRONO_ROUNDING == 0
 
 // round down
 template <class To, class Rep, class Period>
@@ -1061,14 +1080,14 @@ ceil(const std::chrono::time_point<Clock, FromDuration>& tp)
     return time_point<Clock, To>{ceil<To>(tp.time_since_epoch())};
 }
 
-#else  // (defined(_MSC_FULL_VER) && _MSC_FULL_VER < 190023918) || __cplusplus <= 201402
+#else  // HAS_CHRONO_ROUNDING == 1
 
 using std::chrono::floor;
 using std::chrono::ceil;
 using std::chrono::round;
 using std::chrono::abs;
 
-#endif  // (defined(_MSC_FULL_VER) && _MSC_FULL_VER < 190023918) || __cplusplus <= 201402
+#endif  // HAS_CHRONO_ROUNDING
 
 // trunc towards zero
 template <class To, class Clock, class FromDuration>
@@ -3934,7 +3953,7 @@ namespace detail
 template <class CharT, class Traits, class Duration>
 std::basic_string<CharT, Traits>
 format(const std::locale& loc, std::basic_string<CharT, Traits> fmt,
-       local_time<Duration> tp, const std::string* abbrev = nullptr,
+       const local_time<Duration>& tp, const std::string* abbrev = nullptr,
        const std::chrono::seconds* offset_sec = nullptr)
 {
     // Handle these specially
@@ -4043,7 +4062,7 @@ template <class CharT, class Traits, class Duration>
 inline
 std::basic_string<CharT, Traits>
 format(const std::locale& loc, std::basic_string<CharT, Traits> fmt,
-       local_time<Duration> tp)
+       const local_time<Duration>& tp)
 {
     return detail::format(loc, std::move(fmt), tp);
 }
@@ -4051,7 +4070,7 @@ format(const std::locale& loc, std::basic_string<CharT, Traits> fmt,
 template <class CharT, class Traits, class Duration>
 inline
 std::basic_string<CharT, Traits>
-format(std::basic_string<CharT, Traits> fmt, local_time<Duration> tp)
+format(std::basic_string<CharT, Traits> fmt, const local_time<Duration>& tp)
 {
     return detail::format(std::locale{}, std::move(fmt), tp);
 }
@@ -4060,7 +4079,7 @@ template <class CharT, class Traits, class Duration>
 inline
 std::basic_string<CharT, Traits>
 format(const std::locale& loc, std::basic_string<CharT, Traits> fmt,
-       sys_time<Duration> tp)
+       const sys_time<Duration>& tp)
 {
     const std::string abbrev("UTC");
     CONSTDATA std::chrono::seconds offset{0};
@@ -4071,7 +4090,7 @@ format(const std::locale& loc, std::basic_string<CharT, Traits> fmt,
 template <class CharT, class Traits, class Duration>
 inline
 std::basic_string<CharT, Traits>
-format(std::basic_string<CharT, Traits> fmt, sys_time<Duration> tp)
+format(std::basic_string<CharT, Traits> fmt, const sys_time<Duration>& tp)
 {
     const std::string abbrev("UTC");
     CONSTDATA std::chrono::seconds offset{0};
@@ -4084,7 +4103,7 @@ format(std::basic_string<CharT, Traits> fmt, sys_time<Duration> tp)
 template <class CharT, class Duration>
 inline
 std::basic_string<CharT>
-format(const std::locale& loc, const CharT* fmt, local_time<Duration> tp)
+format(const std::locale& loc, const CharT* fmt, const local_time<Duration>& tp)
 {
     return detail::format(loc,  std::basic_string<CharT>(fmt), tp);
 }
@@ -4092,7 +4111,7 @@ format(const std::locale& loc, const CharT* fmt, local_time<Duration> tp)
 template <class CharT, class Duration>
 inline
 std::basic_string<CharT>
-format(const CharT* fmt, local_time<Duration> tp)
+format(const CharT* fmt, const local_time<Duration>& tp)
 {
     return detail::format(std::locale{}, std::basic_string<CharT>(fmt), tp);
 }
@@ -4100,7 +4119,7 @@ format(const CharT* fmt, local_time<Duration> tp)
 template <class CharT, class Duration>
 inline
 std::basic_string<CharT>
-format(const std::locale& loc, const CharT* fmt, sys_time<Duration> tp)
+format(const std::locale& loc, const CharT* fmt, const sys_time<Duration>& tp)
 {
     const std::string abbrev("UTC");
     CONSTDATA std::chrono::seconds offset{0};
@@ -4112,7 +4131,7 @@ format(const std::locale& loc, const CharT* fmt, sys_time<Duration> tp)
 template <class CharT, class Duration>
 inline
 std::basic_string<CharT>
-format(const CharT* fmt, sys_time<Duration> tp)
+format(const CharT* fmt, const sys_time<Duration>& tp)
 {
     const std::string abbrev("UTC");
     CONSTDATA std::chrono::seconds offset{0};

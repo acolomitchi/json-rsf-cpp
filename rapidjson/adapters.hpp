@@ -5,20 +5,30 @@
  *      Author: acolomitchi
  */
 
-#ifndef RAPIDJSON_ADAPTER_HPP_
-#define RAPIDJSON_ADAPTER_HPP_
+#ifndef RAPIDJSON_ADAPTERS_HPP_
+#define RAPIDJSON_ADAPTERS_HPP_
+
+#include <iostream>
 
 #include <rapidjson/rapidjson.h>
+#include <rapidjson/reader.h>
+#include <rapidjson/stream.h>
+#include <rapidjson/ostreamwrapper.h>
+#include <rapidjson/prettywriter.h>
 
-#include "../sax/SaxAdaptor.hpp"
+#include "../json_handlers/JsonAdapter.hpp"
+#include "../json_handlers/emitter.hpp"
 
 #ifdef __cplusplus
 
 namespace jsonrsf {
 namespace rapidjson {
 
-template <typename T, bool asArray=false> class RapidJsonSaxAdapter :
-    public ::jsonrsf::SaxAdaptor<T, asArray>
+namespace rj=::rapidjson;
+
+template <typename T, bool asArray=false> class RapidJsonAdapter :
+    public ::jsonrsf::JsonAdapter<T, asArray>,
+    public rj::BaseReaderHandler<rj::UTF8<>, RapidJsonAdapter<T,asArray>>
 {
 protected:
   std::string lastErrorMsg_;
@@ -34,11 +44,11 @@ protected:
     ;
   }
 public:
-  RapidJsonSaxAdapter() :
-    ::jsonrsf::SaxAdaptor<T, asArray>(), lastErrorMsg_()
+  RapidJsonAdapter() :
+    ::jsonrsf::JsonAdapter<T, asArray>(), lastErrorMsg_()
   {
   }
-  ~RapidJsonSaxAdapter() { }
+  ~RapidJsonAdapter() { }
 
   bool hasError() {
     return false==this->lastErrorMsg_.empty();
@@ -217,6 +227,108 @@ public:
     }
     return toRet;
   }
+
+};
+
+template <bool indented, class OutStream, class DestEncoding> struct rjwriter_kind;
+
+template <class OutStream, class DestEncoding>
+struct rjwriter_kind<false, OutStream, DestEncoding>
+{
+  using type=rj::Writer<OutStream, rj::UTF8<>, DestEncoding>;
+  ;
+};
+template <class OutStream, class DestEncoding>
+struct rjwriter_kind<true, OutStream, DestEncoding>
+{
+  using type=rj::PrettyWriter<OutStream, rj::UTF8<>, DestEncoding>;
+};
+
+template <
+  bool pretty_print=false,
+  class DestEncoding=rj::UTF8<>
+>
+class RapidJsonEmitter :
+  public Emitter
+{
+protected:
+  rj::OStreamWrapper oStream_;
+  typename rjwriter_kind<
+    pretty_print,
+    ::rapidjson::OStreamWrapper,
+     DestEncoding
+   >::type writer_;
+
+public:
+  RapidJsonEmitter(std::ostream& out) :
+    oStream_(out), writer_(oStream_)
+  {
+  }
+
+  ~RapidJsonEmitter() {
+  }
+
+  // emits a null
+  virtual void emit(void) {
+    this->writer_.Null();
+  }
+
+  virtual void emit(bool v) {
+    this->writer_.Bool(v);
+  }
+
+  virtual void emit(int8_t v) {
+    this->writer_.Int(v);
+  }
+  virtual void emit(uint8_t v) {
+    this->writer_.Uint(v);
+  }
+  virtual void emit(int16_t v) {
+    this->writer_.Int(v);
+  }
+  virtual void emit(uint16_t v) {
+    this->writer_.Uint(v);
+  }
+  virtual void emit(int32_t v) {
+    this->writer_.Int(v);
+  }
+  virtual void emit(uint32_t v) {
+    this->writer_.Uint(v);
+  }
+  virtual void emit(int64_t v) {
+    this->writer_.Int64(v);
+  }
+  virtual void emit(uint64_t v) {
+    this->writer_.Uint64(v);
+  }
+
+  virtual void emit(float v) {
+    this->writer_.Double(v);
+  }
+  virtual void emit(double v) {
+    this->writer_.Double(v);
+  }
+
+  virtual void emit(const std::string& v) {
+    this->writer_.String(v.c_str(), v.length(), true);
+  }
+
+  virtual void emitObjStart() {
+    this->writer_.StartObject();
+  }
+  virtual void emitPropName(const std::string& v) {
+    this->writer_.Key(v.c_str(), v.length(), true);
+  }
+  virtual void emitObjEnd() {
+    this->writer_.EndObject();
+  }
+  virtual void emitArrayStart() {
+    this->writer_.StartArray();
+  }
+  virtual void emitArrayEnd() {
+    this->writer_.EndArray();
+  }
+
 };
 
 } // rapidjson ns
@@ -225,4 +337,4 @@ public:
 #endif /* __cplusplus */
 
 
-#endif /* RAPIDJSON_ADAPTER_HPP_ */
+#endif /* RAPIDJSON_ADAPTERS_HPP_ */
